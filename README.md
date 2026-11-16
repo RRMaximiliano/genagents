@@ -25,6 +25,8 @@ Additionally, to provide users with a sense of the interview-based agents, we of
   - [Dependencies](#dependencies)
   - [Configuration](#configuration)
   - [Using a subscription instead of an API key](#using-a-subscription-instead-of-an-api-key)
+    - [Quick start](#quick-start)
+    - [Using it from T3 Code](#using-it-from-t3-code)
 - [Repository Structure](#repository-structure)
 - [Usage](#usage)
   - [Creating a Generative Agent](#creating-a-generative-agent)
@@ -110,6 +112,54 @@ Things to know:
 - **Speed.** Every call starts a new CLI process, which adds a second or two. In our tests a call took about 3 to 9 seconds with `claude_cli` (Sonnet) and 4 to 17 seconds with `codex_cli`.
 - **Rate limits.** Subscriptions have usage limits that reset over hours. Surveying hundreds of agents can hit them, and `Survey`/`Interview` start 50 threads by default, which means 50 CLI processes at once. Use a smaller `num_threads` and expect to spread large runs out. Calls that fail return `GENERATION ERROR: ...` as with the API.
 - **Results differ from the paper.** The paper's results come from GPT-4o through the API. Other models give different answers, and the CLIs don't expose `temperature` or `max_tokens` (both are ignored), so don't expect to reproduce the published numbers.
+
+#### Quick start
+
+Use Python 3.12 or earlier (the pinned `numpy==1.26.2` doesn't install on newer versions). From the repo root:
+
+```bash
+python3.12 -m venv .venv            # or: uv venv -p 3.12 .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp simulation_engine/example-settings.py simulation_engine/settings.py
+```
+
+In `simulation_engine/settings.py`, set `LLM_BACKEND = "claude_cli"` (or `"codex_cli"`), `CLAUDE_MODEL = "sonnet"` and `EMBEDDING_BACKEND = "local"`. Then save this as `try_agent.py` in the repo root and run `python try_agent.py`:
+
+```python
+from genagents.genagents import GenerativeAgent
+
+agent = GenerativeAgent(agent_folder="agent_bank/populations/single_agent/01fd7d2a-0357-4c1b-9f3e-8eade2d537ae")
+
+# Survey: categorical questions
+survey = agent.categorical_resp({
+  "Generally speaking, would you say most people can be trusted?": ["Can be trusted", "Can't be too careful", "Depends"],
+  "How happy are you these days?": ["Very happy", "Pretty happy", "Not too happy"],
+})
+print(survey["responses"])
+
+# Interview: open-ended answer
+print(agent.utterance([["Interviewer", "Tell me about your favorite hobby."]]))
+```
+
+The first run downloads the small embedding model (about 90 MB). After that, this example takes about 30 seconds and prints something like `['Can be trusted', 'Pretty happy']` followed by a few sentences about drawing and painting.
+
+#### Using it from T3 Code
+
+[T3 Code](https://github.com/pingdotgg/t3code) runs Claude Code or Codex in threads on your machine. Open this folder as a project, start a thread, and ask the agent to do the work in plain language. It writes and runs the Python for you. The simulation's own LLM calls go through `claude` or `codex` too, so the whole run uses your subscription. Example prompts:
+
+- **Set up:** "Set up this repo for the subscription backend: make a Python 3.12 venv in `.venv`, install `requirements.txt`, and create `simulation_engine/settings.py` from `example-settings.py` with `LLM_BACKEND = "claude_cli"`, `CLAUDE_MODEL = "sonnet"` and `EMBEDDING_BACKEND = "local"`. Then run the Quick start example from the README."
+- **Survey:** "Load the sample agent in `agent_bank/populations/single_agent/01fd7d2a-0357-4c1b-9f3e-8eade2d537ae` and ask it these questions with `categorical_resp`: [your questions and answer options]. Show the answers in a table."
+- **Numeric scale:** "Ask the sample agent 'On a scale of 1 to 10, how much do you trust the news media?' with `numerical_resp` (range 1 to 10), five times, and report the mean and spread."
+- **Interview:** "Interview the sample agent for five turns about its childhood and career with `agent.utterance`. Keep the dialogue history between turns, write my follow-up questions based on its answers, and save the transcript to `interview.md`."
+- **New agent:** "Create a new agent with `update_scratch` from this description: [description]. Add these memories with `remember()`: [memories]. Save it to `agent_bank/populations/my_agents/<name>`, then ask it [question]."
+- **Compare backends:** "Run the same three survey questions on the sample agent once with `LLM_BACKEND = "claude_cli"` and once with `"codex_cli"`, and compare the answers side by side. Settings are read at import, so use a separate run for each."
+
+Tips:
+
+- **Permissions.** The thread's agent starts `claude` or `codex` again for every simulation call, and those calls need network access. If the thread runs in a sandbox that blocks network access (for example Codex's default sandbox), they fail with `GENERATION ERROR: ...`. Allow the command to run with network access, or run the script yourself in a terminal. We tested from a Claude Code thread only.
+- **Long runs.** Each call takes 3 to 17 seconds, so ask the agent to run big surveys in the background and save results to a file as it goes.
+- **Quota.** The thread's agent and the simulation share the same subscription limits.
 
 ## Repository Structure
 
