@@ -24,6 +24,7 @@ Additionally, to provide users with a sense of the interview-based agents, we of
   - [Requirements](#requirements)
   - [Dependencies](#dependencies)
   - [Configuration](#configuration)
+  - [Using a subscription instead of an API key](#using-a-subscription-instead-of-an-api-key)
 - [Repository Structure](#repository-structure)
 - [Usage](#usage)
   - [Creating a Generative Agent](#creating-a-generative-agent)
@@ -47,7 +48,7 @@ Additionally, to provide users with a sense of the interview-based agents, we of
 ### Requirements
 
 - Python 3.7 or higher
-- An OpenAI API key with access to GPT-4 or GPT-3.5-turbo models
+- An OpenAI API key with access to GPT-4 or GPT-3.5-turbo models, or a Claude or ChatGPT subscription (see [Using a subscription instead of an API key](#using-a-subscription-instead-of-an-api-key))
 
 ### Dependencies
 
@@ -81,6 +82,35 @@ LLM_PROMPT_DIR = f"{BASE_DIR}/simulation_engine/prompt_template"
 
 Replace `"YOUR_API_KEY"` with your actual OpenAI API key and `"YOUR_NAME"` with your name.
 
+### Using a subscription instead of an API key
+
+You can run the agents through the Claude Code CLI (`claude`, Claude subscription) or the Codex CLI (`codex`, ChatGPT subscription) instead of the OpenAI API. Install the CLI you want, log in once (`claude`, or `codex login`), then add these lines to `settings.py` (see `example-settings.py` for all options):
+
+```python
+LLM_BACKEND = "claude_cli"         # or "codex_cli"; "openai" is the original API setup
+CLAUDE_MODEL = "sonnet"            # optional; None uses the CLI's default model
+CODEX_MODEL = None                 # optional
+CLI_TIMEOUT = 300                  # seconds per call
+EMBEDDING_BACKEND = "local"        # sentence-transformers, no API key needed
+LOCAL_EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+```
+
+With both settings off `"openai"`, `OPENAI_API_KEY` is not used and `openai` is not imported. Each LLM call runs the CLI headless with tools, MCP servers and file access turned off, so it only answers the prompt. `ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN`, `OPENAI_API_KEY` and `CODEX_API_KEY` are removed from the CLI's environment so it bills your subscription, not the API.
+
+Memory retrieval compares stored embeddings with new ones, so they must come from the same model. After switching `EMBEDDING_BACKEND`, re-embed any agent that has memories (the GSS agents have none; the sample agent in this branch is already re-embedded for `"local"`):
+
+```bash
+python reembed_agents.py agent_bank/populations/single_agent
+```
+
+The previous file is kept as `embeddings.json.bak`. To go back to `"openai"`, restore the backup or run the script again with that setting. (For the sample agent, the original OpenAI vectors are also in git history: `git checkout main -- agent_bank/populations/single_agent`.)
+
+Things to know:
+
+- **Speed.** Every call starts a new CLI process, which adds a second or two. In our tests a call took about 3 to 9 seconds with `claude_cli` (Sonnet) and 4 to 17 seconds with `codex_cli`.
+- **Rate limits.** Subscriptions have usage limits that reset over hours. Surveying hundreds of agents can hit them, and `Survey`/`Interview` start 50 threads by default, which means 50 CLI processes at once. Use a smaller `num_threads` and expect to spread large runs out. Calls that fail return `GENERATION ERROR: ...` as with the API.
+- **Results differ from the paper.** The paper's results come from GPT-4o through the API. Other models give different answers, and the CLIs don't expose `temperature` or `max_tokens` (both are ignored), so don't expect to reproduce the published numbers.
+
 ## Repository Structure
 
 - `genagents/`: Core module for creating and interacting with generative agents
@@ -94,6 +124,7 @@ Replace `"YOUR_API_KEY"` with your actual OpenAI API key and `"YOUR_NAME"` with 
   - `global_methods.py`: Helper functions used across modules
   - `gpt_structure.py`: Functions for interacting with the GPT models
   - `llm_json_parser.py`: Parses JSON outputs from language models
+- `reembed_agents.py`: Re-embeds stored agent memories after changing `EMBEDDING_BACKEND`
 - `agent_bank/`: Directory for storing agent data
   - `populations/`: Contains pre-generated agents
     - `gss_agents/`: Demographic agent data based on the GSS
@@ -205,7 +236,7 @@ A sample agent is provided in the `agent_bank/populations/single_agent/` directo
 You can load and interact with the sample agent as follows:
 
 ```python
-agent = GenerativeAgent(agent_folder="agent_bank/populations/single_agent")
+agent = GenerativeAgent(agent_folder="agent_bank/populations/single_agent/01fd7d2a-0357-4c1b-9f3e-8eade2d537ae")
 
 # Interact with the agent
 questions = {

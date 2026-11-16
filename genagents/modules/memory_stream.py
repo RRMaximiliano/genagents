@@ -263,6 +263,10 @@ def extract_relevance(seq_nodes, embeddings, focal_pt):
                    values are the float that represents the relevance score.
   """
   focal_embedding = get_text_embedding(focal_pt)
+  if seq_nodes and len(embeddings[seq_nodes[0].content]) != len(focal_embedding):
+    raise ValueError("Stored embeddings were made with a different embedding "
+                     "model than EMBEDDING_BACKEND. Run reembed_agents.py on "
+                     "this agent folder.")
 
   relevance_out = dict()
   for count, node in enumerate(seq_nodes): 
